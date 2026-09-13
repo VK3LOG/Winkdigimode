@@ -61,6 +61,11 @@ class AppState:
         self.last_rx_text = None
         self.audio_input_name = None
         self.audio_output_name = None
+        self.audio_in_index = None
+        self.audio_out_index = None
+        self.audio_mode = "sim"        # sim | audio (real soundcard)
+        self.rx_listening = False
+        self._seen_rx = set()
         # QSO session state
         self.seq = 0
         self.sel_dest = None           # selected station source-id (int)
@@ -228,6 +233,10 @@ class QsoPage(Gtk.Box):
         self.scan_btn = Gtk.Button(label="Scan", css_classes=["suggested-action"], hexpand=True)
         self.scan_btn.connect("clicked", self._on_scan)
         scan_row.append(self.scan_btn)
+        self.listen_btn = Gtk.Button(label="Listen: OFF")
+        self.listen_btn.set_tooltip_text("Real soundcard RX listener (needs input device)")
+        self.listen_btn.connect("clicked", self._on_listen_toggle)
+        scan_row.append(self.listen_btn)
         left.append(scan_row)
         self.append(left)
         self.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
@@ -274,9 +283,13 @@ class QsoPage(Gtk.Box):
         ctl_row.append(self.fec_combo)
         self.snr_spin = Gtk.SpinButton.new_with_range(-30, 0, 1)
         self.snr_spin.set_value(state.current_snr)
-        self.snr_spin.set_tooltip_text("Link SNR (dB)")
+        self.snr_spin.set_tooltip_text("Link SNR in dB (simulated path only)")
         self.snr_spin.connect("value-changed", self._on_snr)
         ctl_row.append(self.snr_spin)
+        self.path_combo = Gtk.DropDown(model=Gtk.StringList.new(["simulated", "soundcard"]))
+        self.path_combo.set_tooltip_text("Audio path: simulated channel or real soundcard")
+        self.path_combo.connect("notify::selected", self._on_path)
+        ctl_row.append(self.path_combo)
         right.append(ctl_row)
         self.append(right)
 
@@ -381,11 +394,70 @@ class QsoPage(Gtk.Box):
     def _on_snr(self, spin):
         self.state.current_snr = float(spin.get_value())
 
+    def _on_path(self, combo, _pspec):
+        self.state.audio_mode = ("sim", "audio")[combo.get_selected()]
+        self.state.notify()
+        if self.state.audio_mode == "audio":
+            self._log("-- audio path: REAL soundcard. Select devices in menu -> Audio. "
+                      "Use Listen to receive, Send to transmit. --")
+        else:
+            self._log("-- audio path: simulated channel --")
+
+    def _on_listen_toggle(self, *_):
+        import threading
+        if self.state.rx_listening:
+            self.state.rx_listening = False
+            self.listen_btn.set_label("Listen: OFF")
+            return
+        if self.state.audio_in_index is None and not audio_devices.AVAILABLE:
+            self.toast_overlay.add_toast(Adw.Toast(
+                title="No audio backend -- install libportaudio2 + pip sounddevice, "
+                      "then pick an input in menu -> Audio", timeout=5))
+            return
+        self.state.rx_listening = True
+        self.listen_btn.set_label("Listen: ON")
+        self._log("-- listening on soundcard input --")
+        threading.Thread(target=self._rx_loop, daemon=True).start()
+
+    def _rx_loop(self):
+        while self.state.rx_listening:
+            ok, samples, msg = wink_engine.rx_capture(
+                4.0, device_in=self.state.audio_in_index)
+            if not ok:
+                GLib.idle_add(self._rx_error, msg)
+                return
+            rep = wink_engine.decode_audio(samples, self.state.current_profile,
+                                           self.state.fec)
+            if rep.get("ok"):
+                key = (rep.get("source"), rep.get("seq"))
+                if key not in self.state._seen_rx:
+                    self.state._seen_rx.add(key)
+                    GLib.idle_add(self._on_heard, rep)
+
+    def _rx_error(self, msg):
+        self.state.rx_listening = False
+        self.listen_btn.set_label("Listen: OFF")
+        self.toast_overlay.add_toast(Adw.Toast(title=f"RX stopped: {msg}", timeout=5))
+        return False
+
+    def _on_heard(self, rep):
+        try:
+            text = bytes(rep["payload"]).decode(errors="replace")
+        except Exception:
+            text = repr(rep.get("payload"))
+        self._log(f"<< 0x{rep.get('source', 0):08x}: {text}")
+        est = rep.get("est_snr_db")
+        self.state.record_decode(text, est if est is not None else self.state.current_snr)
+        return False
+
     def _on_send(self):
         if self._busy_tx:
             return
         text = self.tx_entry.get_text().strip()
         if not text:
+            return
+        if self.state.audio_mode == "audio":
+            self._send_audio(text)
             return
         if self.state.sel_dest is None:
             self.toast_overlay.add_toast(Adw.Toast(
@@ -400,6 +472,36 @@ class QsoPage(Gtk.Box):
                     fec=self.state.fec, seq=self.state.seq)
         self._log(f">> {self.state.callsign}: {text}")
         wink_engine.run_async(lambda: wink_engine.send_text(**args), self._on_sent)
+
+    def _send_audio(self, text):
+        # Real soundcard TX: no station selection needed (CQ-style
+        # broadcast if none selected); the air path is the operator's
+        # radio, and anything heard comes back via the RX listener.
+        if not audio_devices.AVAILABLE and self.state.audio_out_index is None:
+            self.toast_overlay.add_toast(Adw.Toast(
+                title="No audio backend -- install libportaudio2 + pip "
+                      "sounddevice, then pick output in menu -> Audio",
+                timeout=5))
+            return
+        self._busy_tx = True
+        self.send_btn.set_sensitive(False)
+        self.state.seq += 1
+        dest = self.state.sel_dest if self.state.sel_dest is not None else 0xFFFFFFFF
+        tag = self.state.sel_label if self.state.sel_dest is not None else "CQ"
+        args = dict(text=text, source_id=self.state.my_id, dest_id=dest,
+                    profile=self.state.current_profile, fec=self.state.fec,
+                    seq=self.state.seq, device_out=self.state.audio_out_index)
+        self._log(f">> {self.state.callsign} -> {tag} (on air): {text}")
+        wink_engine.run_async(lambda: wink_engine.tx_audio(**args), self._on_air)
+
+    def _on_air(self, res):
+        self._busy_tx = False
+        self.send_btn.set_sensitive(True)
+        if not res.get("ok"):
+            self._log(f"-- TX failed: {res.get('error', '?')} --")
+            return
+        self._log(f"-- {res['seconds']:.1f}s of audio transmitted -- "
+                  f"listening for replies --")
 
     def _on_sent(self, res):
         self._busy_tx = False
@@ -678,6 +780,7 @@ class AudioPreferencesWindow(Adw.PreferencesWindow):
             idx = row.get_selected()
             if idx < len(self._input_devices):
                 self.state.audio_input_name = self._input_devices[idx]["name"]
+                self.state.audio_in_index = self._input_devices[idx]["index"]
                 self.state.notify()
 
     def _on_output_changed(self, row, _pspec):
@@ -685,6 +788,7 @@ class AudioPreferencesWindow(Adw.PreferencesWindow):
             idx = row.get_selected()
             if idx < len(self._output_devices):
                 self.state.audio_output_name = self._output_devices[idx]["name"]
+                self.state.audio_out_index = self._output_devices[idx]["index"]
                 self.state.notify()
 
     def _on_test(self, *_):

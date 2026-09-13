@@ -144,6 +144,74 @@ def send_text(text: str, source_id: int, dest_id: int, profile: str,
             "elapsed_s": time.time() - t0}
 
 
+def tx_audio(text: str, source_id: int, dest_id: int, profile: str,
+             fec: str = DEFAULT_FEC, seq: int = 1,
+             device_out=None, tx_cfo: float = 0.0) -> dict:
+    """Real soundcard TX: synthesise the packet audio and play it out
+    the selected output device. Returns duration info; the RF/air path
+    is the operator's radio, not simulated -- what comes back is decoded
+    by the RX listener, not looped in software."""
+    t0 = time.time()
+    try:
+        import audio_loopback as al
+        c, audio, _symbols = al.build_audio(profile, text.encode()[:32], fec=fec)
+    except Exception as exc:
+        return {"ok": False, "error": f"build failed: {exc}",
+                "elapsed_s": time.time() - t0}
+    try:
+        import sounddevice as sd
+    except Exception as exc:
+        return {"ok": False, "error": f"audio backend missing: {exc}. "
+                "Install libportaudio2 + pip sounddevice.",
+                "elapsed_s": time.time() - t0}
+    try:
+        info = sd.query_devices(device_out, "output")
+        dev_rate = int(info["default_samplerate"])
+        audio_up = al.resample(audio, 12000, dev_rate)
+        sd.play(audio_up, samplerate=dev_rate, device=device_out, blocking=True)
+    except Exception as exc:
+        return {"ok": False, "error": f"playback failed: {exc}",
+                "elapsed_s": time.time() - t0}
+    return {"ok": True, "seconds": len(audio) / 12000.0,
+            "elapsed_s": time.time() - t0}
+
+
+def rx_capture(seconds: float, device_in=None,
+               samplerate_in: int | None = None) -> tuple[bool, np.ndarray, str]:
+    """Record `seconds` of audio and return it at 12000 Hz mono for the
+    real decoder. Returns (ok, samples_12k, message)."""
+    try:
+        import sounddevice as sd
+        import audio_loopback as al
+    except Exception as exc:
+        return False, np.zeros(0), f"audio backend missing: {exc}"
+    try:
+        if samplerate_in is None:
+            info = sd.query_devices(device_in, "input")
+            samplerate_in = int(info["default_samplerate"])
+        rec = sd.rec(int(seconds * samplerate_in), samplerate=samplerate_in,
+                     channels=1, device=device_in, blocking=True)
+        mono = np.asarray(rec[:, 0], dtype=np.float64)
+        return True, al.resample(mono, samplerate_in, 12000), ""
+    except Exception as exc:
+        return False, np.zeros(0), f"record failed: {exc}"
+
+
+def decode_audio(samples_12k: np.ndarray, profile: str,
+                 fec: str = DEFAULT_FEC) -> dict:
+    """Run the real modem decoder over recorded 12000 Hz audio."""
+    t0 = time.time()
+    try:
+        import audio_loopback as al
+        report = al.decode_from_recording(np.asarray(samples_12k, dtype=float),
+                                          profile, fec, "soft")
+        report["elapsed_s"] = time.time() - t0
+        return report
+    except Exception as exc:
+        return {"ok": False, "reason": f"{type(exc).__name__}: {exc}",
+                "elapsed_s": time.time() - t0}
+
+
 def threshold_table(channel: str = "awgn") -> dict:
     if channel == "fading":
         return dict(THRESHOLDS_FADING)
