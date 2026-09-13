@@ -135,11 +135,11 @@ def decode_from_recording(rec: np.ndarray, profile_name: str,
     if dec is None:
         return {"ok": False, "reason": "no sync / no packet found in capture"}
 
-    pkt, confidence = dec
-    # Refine absolute channel metrics via the normal sync search on the
-    # matched window.
+    pkt, confidence, cfo_est = dec
+    # Absolute timing still needs the normal sync search on the matched
+    # window; the CFO comes straight from the decode (no re-search).
     inner = find_sync(rec[o:], c, sync)
-    inner_start, cfo_est = inner if inner is not None else (0, 0.0)
+    inner_start = inner[0] if inner is not None else 0
     start = o + inner_start
 
     # SNR estimate: quiet lead-in vs data region.

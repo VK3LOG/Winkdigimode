@@ -176,6 +176,53 @@ def cmd_rig(args):
         print(f"rig error: {exc}")
 
 
+def cmd_scan(args):
+    import wink_engine
+    t0 = time.time()
+    res = wink_engine.wideband_trial(args.snr, args.profile, fec=args.fec)
+    if not res.get("ok"):
+        print(f"scan failed: {res.get('error', '?')}")
+        return
+    if not res["stations"]:
+        print(f"nothing heard @ {args.snr} dB ({res['elapsed_s']:.0f}s)")
+        return
+    for st in res["stations"]:
+        try:
+            payload = st["payload"].decode(errors="replace")
+        except Exception:
+            payload = repr(st["payload"])
+        print(f"0x{st['source']:08x} seq={st['seq']} offset={st['offset_hz']:+.1f}Hz "
+              f"cfo={st.get('cfo_hz', 0.0):+.1f}Hz conf={st['confidence']:.0%} "
+              f"\u201c{payload}\u201d")
+    print(f"({res['elapsed_s']:.0f}s scan)")
+
+
+def cmd_send(args):
+    import wink_engine
+    from wink_core import callsign_id as _ci
+    try:
+        dest = int(args.to, 0)
+    except ValueError:
+        try:
+            dest = _ci(args.to)
+        except ValueError as exc:
+            print(f"bad destination: {exc}")
+            return
+    t0 = time.time()
+    res = wink_engine.send_text(args.text, _ci(args.me), dest, args.profile,
+                                args.snr, channel=args.channel, fec=args.fec,
+                                seq=args.seq)
+    if not res.get("ok"):
+        print(f"TX error: {res.get('error', '?')}")
+        return
+    if res["decoded"]:
+        print(f"<< 0x{res['source']:08x}: {res['text']}  ({time.time()-t0:.0f}s)")
+        print(f"link suggests {res['recommended']}")
+    else:
+        print(f"-- no decode @ {args.snr} dB "
+              f"({args.profile}/{args.channel}/{args.fec}) --")
+
+
 def main():
     p = argparse.ArgumentParser(description="WINK digital-mode CLI (portable)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -206,10 +253,23 @@ def main():
     r.add_argument("--port", type=int, default=4532)
     r.add_argument("--set", default=None, help="freq: set frequency Hz")
     r.add_argument("--state", default=None, help="ptt: on|off")
+    sc = sub.add_parser("scan", help="real wideband scan of a simulated passband")
+    sc.add_argument("--snr", type=float, default=-10.0)
+    sc.add_argument("--profile", choices=list(PROFILES.keys()), default="WINK-S")
+    sc.add_argument("--fec", choices=("K7", "K9", "K9_1_3"), default=DEFAULT_FEC)
+    sd = sub.add_parser("send", help="send one TEXT packet through the real channel")
+    sd.add_argument("text")
+    sd.add_argument("--to", default="0xFFFFFFFF", help="dest id or callsign (default: CQ broadcast)")
+    sd.add_argument("--me", default="VK3LOG")
+    sd.add_argument("--profile", choices=list(PROFILES.keys()), default="WINK-N")
+    sd.add_argument("--snr", type=float, default=-14.0)
+    sd.add_argument("--channel", choices=("awgn", "fading"), default="awgn")
+    sd.add_argument("--fec", choices=("K7", "K9", "K9_1_3"), default=DEFAULT_FEC)
+    sd.add_argument("--seq", type=int, default=1)
     args = p.parse_args()
     {"list": cmd_list, "demo": cmd_demo, "beacon": cmd_beacon,
      "fec": cmd_fec, "next": cmd_next, "setup": cmd_setup,
-     "rig": cmd_rig}[args.cmd](args)
+     "rig": cmd_rig, "scan": cmd_scan, "send": cmd_send}[args.cmd](args)
 
 
 if __name__ == "__main__":

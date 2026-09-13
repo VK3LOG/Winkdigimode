@@ -347,16 +347,17 @@ class QsoPage(Gtk.Box):
         else:
             for st in res["stations"]:
                 label = f"0x{st['source']:08x} \u00b7 {st['offset_hz']:+.0f} Hz"
-                try:
-                    payload = st["payload"].decode(errors="replace")
-                except Exception:
-                    payload = repr(st["payload"])
-                row = Adw.ActionRow(title=label,
-                                    subtitle=f"\u201c{payload}\u201d \u00b7 conf {st['confidence']:.0%}")
-                sel_btn = Gtk.Button(label="Select", valign=Gtk.Align.CENTER, css_classes=["flat"])
-                sel_btn.connect("clicked", self._on_select, st)
-                row.add_suffix(sel_btn)
-                self.stations.prepend(row)
+            try:
+                payload = st["payload"].decode(errors="replace")
+            except Exception:
+                payload = repr(st["payload"])
+            row = Adw.ActionRow(title=label,
+                                subtitle=f"\u201c{payload}\u201d \u00b7 conf {st['confidence']:.0%} "
+                                         f"\u00b7 CFO {st.get('cfo_hz', 0.0):+.1f} Hz")
+            sel_btn = Gtk.Button(label="Select", valign=Gtk.Align.CENTER, css_classes=["flat"])
+            sel_btn.connect("clicked", self._on_select, st)
+            row.add_suffix(sel_btn)
+            self.stations.prepend(row)
             self._log(f"-- scan @ {res['snr_db']:.0f} dB: {len(res['stations'])} station(s) "
                       f"in {res['elapsed_s']:.0f}s --")
         # FT8-style: chain the next pass whenever TX is idle.
@@ -370,7 +371,8 @@ class QsoPage(Gtk.Box):
         self.state.select_station(st["source"], st["offset_hz"],
                                   f"0x{st['source']:08x} ({payload}) @ {st['offset_hz']:+.0f} Hz")
         if self.state.rig_connected:
-            target = int(self.state.dial_freq_hz + st["offset_hz"])
+            # QSY corrects for measured offset AND residual CFO.
+            target = int(self.state.dial_freq_hz + st["offset_hz"] + st.get("cfo_hz", 0.0))
             wink_engine.run_async(
                 lambda: self.state.rig_set_freq(target),
                 lambda r: self.toast_overlay.add_toast(Adw.Toast(title=r[1], timeout=3)))

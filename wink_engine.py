@@ -75,7 +75,7 @@ def wideband_trial(snr_db: float = -10.0, profile: str = "WINK-S",
     return {"ok": True, "stations": [
         {"payload": bytes(d.packet.payload),
          "source": d.packet.source, "seq": d.packet.seq,
-         "offset_hz": d.audio_offset_hz,
+         "offset_hz": d.audio_offset_hz, "cfo_hz": d.cfo_hz,
          "confidence": float(d.confidence)} for d in decodes],
         "snr_db": snr_db, "profile": profile,
         "elapsed_s": time.time() - t0}

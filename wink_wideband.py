@@ -45,8 +45,10 @@ def _decode_at_offset(
     sync: list[int],
     fec: str,
     llr_mode: str,
-) -> tuple[Packet, float] | None:
-    """Decode one candidate carrier.  Returns packet + sync confidence."""
+) -> tuple[Packet, float, float] | None:
+    """Decode one candidate carrier.  Returns packet + sync confidence +
+    recovered carrier offset (CFO) in Hz, so the application can correct
+    its TX frequency, not just its audio offset."""
     fp = __import__("wink_core").FEC_CONFIGS[fec]
     Kc, Gsc = fp["K"], fp["Gs"]
     rate = len(Gsc)
@@ -101,7 +103,7 @@ def _decode_at_offset(
             coded_llrs, raw_bits_len, K=Kc, Gs=Gsc
         )
         try:
-            return Packet.decode(bits_to_bytes(decoded)), confidence
+            return Packet.decode(bits_to_bytes(decoded)), confidence, cfo_est
         except ValueError:
             pass
     return None
@@ -171,18 +173,20 @@ def scan_wideband(
         hit = _decode_at_offset(samples, candidate, sync, fec, llr_mode)
         if hit is None:
             continue
-        packet, confidence = hit
+        packet, confidence, cfo_est = hit
         key = (packet.source, packet.seq, packet.dest)
         if key in seen:
             continue
         seen.add(key)
         # The offset is relative to the original dial/base frequency, not the
-        # candidate's shifted internal base.
+        # candidate's shifted internal base. cfo_hz is the residual carrier
+        # error the sync search recovered -- the reply TX should correct
+        # for offset AND cfo, not offset alone.
         results.append(WidebandDecode(
             packet=packet,
             profile=profile,
             audio_offset_hz=float(offset),
-            cfo_hz=0.0,
+            cfo_hz=float(cfo_est),
             confidence=confidence,
         ))
 
