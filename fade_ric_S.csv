@@ -1,0 +1,4 @@
+candidate,snr_db,successful,trials,success_rate,coded_bps,occupied_hz,channel
+WINK-S,-24.0,8,24,0.3333333333333333,7.5,60.0,"rician flat, K=10.0 dB, fd=1.0 Hz"
+WINK-S,-22.0,24,24,1.0,7.5,60.0,"rician flat, K=10.0 dB, fd=1.0 Hz"
+WINK-S,-20.0,24,24,1.0,7.5,60.0,"rician flat, K=10.0 dB, fd=1.0 Hz"

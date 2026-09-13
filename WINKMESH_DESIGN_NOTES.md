@@ -23,6 +23,14 @@ channel time on the links that chose to spend it.
   intact. Also confirmed: a non-relay node doesn't propagate, a
   re-heard duplicate isn't re-relayed, and a TTL=0 packet is dropped
   rather than relayed. All four checks passed.
+- Extended topologies (`run_topologies()` in the same demo, all through
+  the real channel): a 5-node line A-B-C-D-E delivers end to end; a
+  diamond (two paths A→B→D and A→C→D) delivers **exactly once** --
+  dedup now also suppresses duplicate *delivery* to the app, not just
+  re-relay; a broadcast from A with relays B,C,D reaches all five
+  nodes. One real finding along the way: without delivery-side dedup,
+  the diamond delivered twice, so `receive()` now gates delivery on
+  first-seen too.
 
 ## What's still not decided/built
 

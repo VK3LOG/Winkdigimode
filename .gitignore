@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.wav
+wink_out/
+build/
+dist/
+*.spec
+_MEI*/
+tmp/
