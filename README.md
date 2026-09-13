@@ -19,6 +19,14 @@ relay support, and an FT8-calibrated sensitivity story. Default channel:
 - `beacon/` -- beacon firmware (ESP32/Si5351), test vectors, beacon docs
 - Docs: `WINK_V02_RESULTS.md` (all measured thresholds + FT8 table)
 
+## Install (Debian/Ubuntu)
+
+    sudo apt install ./wink-monitor_0.2-2.deb
+
+Optional: sound via `sudo apt install libportaudio2`
+then `pip install --break-system-packages sounddevice`;
+real rig control via the auto-installed `rigctld` (`libhamlib-utils`).
+
 ## Run it
 
 GUI (Linux, needs GTK4 + Libadwaita + numpy):
