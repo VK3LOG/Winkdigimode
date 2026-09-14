@@ -58,7 +58,7 @@ The pattern is exactly what the orthogonality condition predicts:
 spacing/baud >= 1 gives clean performance; below that, degradation
 appears earlier and more severely the further below 1x you go.
 
-Extending the SNR sweep further down (`bakeoff2_extended.csv`, 60
+Extending the SNR sweep further down (`results/bakeoff2_extended.csv`, 60
 trials/point) to find real 50%-success thresholds for the two winners:
 
 - **4-FSK/7.5Bd/6.67Hz: ~-22 dB** (100%@-21, 62%@-22, 7%@-23)
@@ -129,7 +129,7 @@ been exercised together as one system.
 ## 8. Error-correction improvements (this round)
 
 Two changes, tested independently and combined, on WINK-S near its
-threshold (`winkS_fec_comparison.csv`, 60 trials/point):
+threshold (`results/winkS_fec_comparison.csv`, 60 trials/point):
 
 1. **Soft-decision LLRs.** The receiver previously threw away
    confidence information: every bit got a fixed +-5.0 LLR regardless
@@ -154,7 +154,7 @@ threshold (`winkS_fec_comparison.csv`, 60 trials/point):
 Soft decoding alone accounts for most of the gain (~0.9 dB); the
 stronger code adds a further ~0.3 dB on top of that. Re-validating
 WINK-N and WINK-F with the winning K9+soft combo
-(`winkNF_K9soft.csv`) shows the same ~1-1.2 dB improvement holds across
+(`results/winkNF_K9soft.csv`) shows the same ~1-1.2 dB improvement holds across
 all three profiles:
 
 | profile | old threshold (K7/hard) | new threshold (K9/soft) |
@@ -225,7 +225,7 @@ octal), is available via `simulate_packet(fec="K9_1_3", ...)` and is the
 `wink_profiles.STRONG_FEC` / ULTRA mode. It costs ~1.5x the coded bits
 of K9 rate-1/2 (so ~1.5x time-on-air) for the largest honest sensitivity
 gain left in this architecture. Benchmarked on WINK-S, soft LLRs,
-40 trials/point (`fecv3_WINK-S.csv`, `run_fecv3.py`):
+40 trials/point (`results/fecv3_WINK-S.csv`, `run_fecv3.py`):
 
 | FEC | code rate | success @ -24 | @ -25 | @ -26 | 50%-threshold (WINK-S) |
 |---|---|---|---|---|---|
@@ -266,7 +266,7 @@ table (`THRESHOLDS_FADING`), and `demo_adaptive_qso.py --fade` runs the
 whole QSO under Rayleigh fd=1 Hz.
 
 Measured 50%-thresholds, K9+soft, 24-30 trials/point
-(`fade_ray_*.csv`, `fade_ric_S.csv`, `fade_2p_F.csv`):
+(`fade_ray_*.csv`, `results/fade_ric_S.csv`, `results/fade_2p_F.csv`):
 
 | profile | AWGN | Rayleigh fd=1 Hz | penalty |
 |---|---|---|---|
@@ -317,8 +317,8 @@ random codewords satisfy all 83 checks), min-sum BP decoder, same
 unknown-CFO/timing search and same SNR convention as WINK.
 Approximations, stated: continuous-phase FSK instead of GFSK, no
 a-priori decoding. `run_ft8_compare.py` runs both modes through the
-identical harness, 24 trials/point (`compare_awgn.csv`,
-`compare_ray.csv`):
+identical harness, 24 trials/point (`results/compare_awgn.csv`,
+`results/compare_ray.csv`):
 
 | mode | AWGN 50% | Rayleigh fd=1 50% | fading cost |
 |---|---|---|---|
